@@ -18,7 +18,29 @@ https://developer.nvidia.com/downloads/assets/gameworks/downloads/secure/nvapi-r
 
 [NVAPI_Reference_Developer.chm](./NVAPI_SDK/docs/NVAPI_Reference_Developer.chm)
 
+#### Sample_Code
 
+[Sample_Code](./Sample_Code)
+
+##### GPUMonitor
+
+https://www.codenong.com/cs106902684/
+
+```
+NVAPI Version: NVidia Complete Version 1.10
+Drive Version: 531.79
+GPU Num: 2
+GPU  |  GPU Name    |  Frequency
+[0]    NVIDIA GeForce RTX 3060     225 MHz
+
+Input The Index of GPU You want to Monitor
+0
+ 2 GPU0 0.00 MB( 0.00% ) P8 17% 48 ℃ 0 r/m
+ 2 GPU0 0.00 MB( 0.00% ) P8 20% 47 ℃ 0 r/m
+ 2 GPU0 0.00 MB( 0.00% ) P8 20% 48 ℃ 0 r/m
+ 2 GPU0 0.00 MB( 0.00% ) P8 18% 47 ℃ 0 r/m
+ ...
+```
 
 
 ##### CustomTiming
