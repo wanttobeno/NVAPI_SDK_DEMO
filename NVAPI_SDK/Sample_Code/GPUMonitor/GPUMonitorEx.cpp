@@ -1,5 +1,17 @@
 #include "GPUMonitorEx.h"
 
+typedef PVOID(__cdecl *_NvAPI_QueryInterface)(_In_ NvU32 FunctionOffset);
+_NvAPI_QueryInterface NvAPI_QueryInterface;
+
+typedef NvAPI_Status(__cdecl *_NvAPI_Initialize)(VOID);
+_NvAPI_Initialize NvAPI_InitializeFuc;
+
+typedef NvAPI_Status(__cdecl *_NvAPI_GPU_GetMemoryInfo)(NvPhysicalGpuHandle hNvDisplay, NV_DISPLAY_DRIVER_MEMORY_INFO *pMemoryInfo);
+_NvAPI_GPU_GetMemoryInfo NvAPI_GPU_GetMemoryInfoFuc;
+
+typedef NvAPI_Status(__cdecl *_NvAPI_Unload)(VOID);
+_NvAPI_Unload NvAPI_UnloadFuc;
+
 GPUMonitorEx::GPUMonitorEx(void)
 	:m_iDeviceID(0)
 	, m_gpuHandle(NULL)
@@ -9,10 +21,30 @@ GPUMonitorEx::GPUMonitorEx(void)
 	{
 		_mkdir(m_slogDir.c_str());
 	}
+#ifdef _M_IX86
+	NvApiLibrary = LoadLibrary(L"nvapi.dll");
+
+#else
+	NvApiLibrary = LoadLibrary(L"nvapi64.dll");
+#endif
+	NvAPI_QueryInterface = (_NvAPI_QueryInterface)GetProcAddress(NvApiLibrary, "nvapi_QueryInterface");
+	NvAPI_InitializeFuc = (_NvAPI_Initialize)NvAPI_QueryInterface(0x150E828UL);
+	NvAPI_GPU_GetMemoryInfoFuc = (_NvAPI_GPU_GetMemoryInfo)NvAPI_QueryInterface(0x07F9b368UL);
+	NvAPI_UnloadFuc = (_NvAPI_Unload)NvAPI_QueryInterface(0xD22BDD7EUL);
+	if (NvAPI_InitializeFuc)
+	{
+		NvAPI_InitializeFuc();
+	}
 }
 
 GPUMonitorEx::~GPUMonitorEx(void)
-{}
+{
+	if (NvAPI_UnloadFuc)
+		NvAPI_UnloadFuc();
+
+	if (NvApiLibrary)
+		FreeLibrary(NvApiLibrary);
+}
 
 bool GPUMonitorEx::GPUInit()
 {
@@ -176,35 +208,57 @@ int GPUMonitorEx::getClockFreq(NvPhysicalGpuHandle gpuHandle)
 
 GPUState GPUMonitorEx::getDeviceState(NvPhysicalGpuHandle gpuHandle, int iDeviceID)
 {
+	NvAPI_Status state;
 	GPUState gpuStats;
 	NV_GPU_THERMAL_SETTINGS thermal = { 0 };
 	thermal.version = NV_GPU_THERMAL_SETTINGS_VER;
-	NvAPI_GPU_GetThermalSettings(gpuHandle, 0, &thermal);
-	gpuStats.iTemperature = static_cast<unsigned>(thermal.sensor[iDeviceID].currentTemp);
+	state = NvAPI_GPU_GetThermalSettings(gpuHandle, 0, &thermal);
+	if (state == NVAPI_OK)
+		gpuStats.iTemperature = static_cast<unsigned>(thermal.sensor[0].currentTemp);
 
 	NvU32 tachometer = 0;
-	NvAPI_GPU_GetTachReading(gpuHandle, &tachometer);
-	gpuStats.iTachometer = tachometer;
+	state = NvAPI_GPU_GetTachReading(gpuHandle, &tachometer);
+	if (state == NVAPI_OK)
+		gpuStats.iTachometer = tachometer;
 
 	NV_GPU_DYNAMIC_PSTATES_INFO_EX infoEx;
 	infoEx.version = NV_GPU_DYNAMIC_PSTATES_INFO_EX_VER;
-	NvAPI_GPU_GetDynamicPstatesInfoEx(gpuHandle, &infoEx);
-	gpuStats.iGPUUsage = infoEx.utilization[iDeviceID].percentage;
+	state = NvAPI_GPU_GetDynamicPstatesInfoEx(gpuHandle, &infoEx);
+	if (state == NVAPI_OK)
+		gpuStats.iGPUUsage = infoEx.utilization[iDeviceID].percentage;
 
 	NV_GPU_PERF_PSTATE_ID CurrentPstate;
-	NvAPI_GPU_GetCurrentPstate(gpuHandle, &CurrentPstate);
-	gpuStats.iPerfstate = static_cast<int>(CurrentPstate);
+	state = NvAPI_GPU_GetCurrentPstate(gpuHandle, &CurrentPstate);
+	if (state == NVAPI_OK)
+		gpuStats.iPerfstate = static_cast<int>(CurrentPstate);
 	return gpuStats;
 }
 
 MemInfo GPUMonitorEx::getDeviceMemory(NvPhysicalGpuHandle gpuHandle)
 {
 	MemInfo memInfo;
-	NV_GPU_MEMORY_INFO_EX pMemoryInfo;
+	NV_GPU_MEMORY_INFO_EX pMemoryInfo = {0};
 	pMemoryInfo.version = NV_DISPLAY_DRIVER_MEMORY_INFO_VER;
 	NvAPI_Status ret = NvAPI_GPU_GetMemoryInfoEx(gpuHandle, &pMemoryInfo);
-	memInfo.fTotalMemory = pMemoryInfo.dedicatedVideoMemory / 1024.0f;
-	memInfo.fFreeMemory = pMemoryInfo.curAvailableDedicatedVideoMemory / 1024.0f;
-	memInfo.fMemUsage = (memInfo.fTotalMemory - memInfo.fFreeMemory) / memInfo.fTotalMemory*100.0f;
+	if (ret ==NVAPI_OK)
+	{
+		memInfo.fTotalMemory = pMemoryInfo.dedicatedVideoMemory / 1024.0f;
+		memInfo.fFreeMemory = pMemoryInfo.curAvailableDedicatedVideoMemory / 1024.0f;
+		memInfo.fMemUsage = (memInfo.fTotalMemory - memInfo.fFreeMemory) / memInfo.fTotalMemory*100.0f;
+	}
+	else
+	{
+		//! \deprecated  Do not use this function - it is deprecated in release 520. Instead, use NvAPI_GPU_GetMemoryInfoEx.
+		NV_DISPLAY_DRIVER_MEMORY_INFO pMemoryInfo = { 0 };
+		pMemoryInfo.version = NV_DISPLAY_DRIVER_MEMORY_INFO_VER;
+
+		NvAPI_Status state = NvAPI_GPU_GetMemoryInfoFuc(gpuHandle, &pMemoryInfo);
+		if (state == NVAPI_OK)
+		{
+			memInfo.fTotalMemory = pMemoryInfo.dedicatedVideoMemory / 1024.0f;
+			memInfo.fFreeMemory = pMemoryInfo.curAvailableDedicatedVideoMemory / 1024.0f;
+			memInfo.fMemUsage = (memInfo.fTotalMemory - memInfo.fFreeMemory) / memInfo.fTotalMemory*100.0f;
+		}
+	}
 	return memInfo;
 }

@@ -64,4 +64,5 @@ private:
 	int                 m_iDeviceID;
 	NvPhysicalGpuHandle m_gpuHandle;
 	std::string         m_slogDir;
+	HINSTANCE  NvApiLibrary = NULL;
 };
